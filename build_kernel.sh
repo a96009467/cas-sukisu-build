@@ -188,6 +188,25 @@ s=re.sub(r'if \(task_work_add\((.*?), TWA_RESUME\)\) \{\n',
 open(p,"w").write(s)
 print("patched supercall.c")
 PYEOF
+    # 4.19 相容：selinux_hide.c 使用 5.x selinux_state 內部成員，整包成 stub
+    python3 - "$KERNEL_DIR/KernelSU/kernel/feature/selinux_hide.c" <<'PYEOF'
+import sys
+p=sys.argv[1]
+s=open(p).read()
+marker='#include <ss/services.h>\n'
+if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s:
+    s=s.replace(marker, marker+"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n",1)
+    stub="""
+#else
+void ksu_selinux_hide_handle_second_stage(void) {}
+void ksu_selinux_hide_handle_post_fs_data(void) {}
+void ksu_selinux_hide_drop_backup_if_unused(void) {}
+#endif
+"""
+    s=s.rstrip()+stub
+open(p,"w").write(s)
+print("patched selinux_hide.c for 4.19")
+PYEOF
     echo "[+] SukiSU Ultra setup finished."
 fi
 
