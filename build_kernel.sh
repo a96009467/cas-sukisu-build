@@ -176,6 +176,8 @@ print("patched sepolicy.c for 4.19")
 PYEOF
     # 4.19 相容：linux/minmax.h 為 5.10+ 表頭
     sed -i 's|#include <linux/minmax.h>|/* minmax.h not on 4.19 */|' "$KERNEL_DIR/KernelSU/kernel/sulog/event.c"
+    # 4.19 相容：dispatch.c 用 tasklist_lock/task_pgrp/task_session/init_task，補表頭
+    sed -i '1i #include <linux/sched/signal.h>\n#include <linux/init_task.h>' "$KERNEL_DIR/KernelSU/kernel/supercall/dispatch.c"
     echo "[+] SukiSU Ultra setup finished."
 fi
 
