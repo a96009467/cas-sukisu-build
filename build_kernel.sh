@@ -174,6 +174,8 @@ bool ksu_genfscon(struct policydb *db, const char *fs_name, const char *path, co
 open(p,"w").write(s)
 print("patched sepolicy.c for 4.19")
 PYEOF
+    # 4.19 相容：linux/minmax.h 為 5.10+ 表頭
+    sed -i 's|#include <linux/minmax.h>|/* minmax.h not on 4.19 */|' "$KERNEL_DIR/KernelSU/kernel/sulog/event.c"
     echo "[+] SukiSU Ultra setup finished."
 fi
 
