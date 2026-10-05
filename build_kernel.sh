@@ -195,7 +195,7 @@ p=sys.argv[1]
 s=open(p).read()
 marker='#include <ss/services.h>\n'
 if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s:
-    s=s.replace(marker, marker+"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n",1)
+    s=s.replace(marker, marker+"\n#include <linux/version.h>\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n",1)
     stub="""
 #else
 void ksu_selinux_hide_handle_second_stage(void) {}
