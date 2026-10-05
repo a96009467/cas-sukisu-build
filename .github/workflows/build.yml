@@ -1,0 +1,47 @@
+name: Build cas SukiSU Ultra kernel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout this repo (build_kernel.sh)
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Checkout kernel source (SO-TS android17-aptusitu)
+        uses: actions/checkout@v4
+        with:
+          repository: SO-TS/android_kernel_xiaomi_sm8250
+          ref: android17-aptusitu
+          path: kernel
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex gawk git gnupg \
+            gperf libncurses-dev libssl-dev libxml2-utils lzop rsync zip python3
+
+      - name: Setup ZyC-Clang 16.0.6
+        run: |
+          mkdir -p $HOME/zyc-clang && cd $HOME/zyc-clang
+          wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
+          tar -zxf Clang-16.0.6-20260807.tar.gz
+
+      - name: Build cas (MIUI, with SukiSU Ultra)
+        working-directory: kernel
+        run: |
+          cp ../repo/build_kernel.sh ./build_kernel.sh
+          chmod +x build_kernel.sh
+          ./build_kernel.sh cas ksu miui
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: cas-sukisu-kernel
+          path: kernel/APTKernel_*.zip
