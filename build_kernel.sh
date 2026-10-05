@@ -65,8 +65,35 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "==========================================="
     echo "[*] Downloading and running SukiSU Ultra remote setup script..."
     curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash
-    # 4.19 無 MODULE_IMPORT_NS 巨集，註解掉該行
+    # 4.19 相容修正：MODULE_IMPORT_NS 不存在
     sed -i 's|^MODULE_IMPORT_NS(VFS_internal.*|// &|' "$KERNEL_DIR/KernelSU/kernel/core/init.c"
+    # 4.19 相容修正：file_operations 無 iopoll / remap_file_range 成員
+    python3 - "$KERNEL_DIR/KernelSU/kernel/infra/file_wrapper.c" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+# iopoll：把 #else 改為 #elif >=5.10，4.19 兩分支都不編
+s = s.replace(
+"#else\nstatic int ksu_wrapper_iopoll(struct kiocb *kiocb, bool spin)",
+"#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\nstatic int ksu_wrapper_iopoll(struct kiocb *kiocb, bool spin)")
+# iopoll ops 賦值守衛
+s = s.replace(
+"    p->ops.iopoll = fp->f_op->iopoll ? ksu_wrapper_iopoll : NULL;",
+"#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n    p->ops.iopoll = fp->f_op->iopoll ? ksu_wrapper_iopoll : NULL;\n#endif")
+# remap_file_range：包裝函式守衛
+s = s.replace(
+"static loff_t ksu_wrapper_remap_file_range",
+"#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)\nstatic loff_t ksu_wrapper_remap_file_range")
+s = s.replace(
+"    return orig->f_op->remap_file_range(orig, pos_in, file_out, pos_out, len, remap_flags);\n    }\n}",
+"    return orig->f_op->remap_file_range(orig, pos_in, file_out, pos_out, len, remap_flags);\n    }\n}\n#endif")
+# remap ops 賦值守衛
+s = s.replace(
+"    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;",
+"#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)\n    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;\n#endif")
+open(p,"w").write(s)
+print("patched file_wrapper.c for 4.19")
+PYEOF
     echo "[+] SukiSU Ultra setup finished."
 fi
 
