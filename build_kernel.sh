@@ -181,6 +181,7 @@ build_target() {
         echo "[*] Injecting SukiSU Ultra configs (KSU + SUSFS + KALLSYMS + KPM)..."
         scripts/config --file "${OUT_DIR}/.config" \
             -e KSU \
+            -e KPROBES \
             -e THREAD_INFO_IN_TASK \
             -e KSU_SUSFS \
             -e KALLSYMS \
