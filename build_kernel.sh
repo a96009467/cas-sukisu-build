@@ -185,8 +185,9 @@ build_target() {
             -e THREAD_INFO_IN_TASK \
             -e KSU_SUSFS \
             -e KALLSYMS \
-            -e KALLSYMS_ALL \
-            -e KPM
+            -e KALLSYMS_ALL
+        # KPM 不啟用：其 access_ok 語法不相容 4.19
+        scripts/config --file "${OUT_DIR}/.config" -d KPM
     fi
 
     if [ "$OS_TYPE" == "miui" ]; then
