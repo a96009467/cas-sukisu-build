@@ -208,14 +208,35 @@ open(p,"w").write(s)
 print("patched selinux_hide.c for 4.19")
 PYEOF
     # 4.19 相容：cpu_spoof.c 用 5.x clocksource.vdso_clock_mode / vdso/datapage.h / ARM64_WORKAROUND_1418040，
-    # 這些符號 4.19 全沒有，直接整支覆寫成 stub（CPU spoof 功能在 4.19 不啟用）
+    # 這些符號 4.19 全沒有，直接整支覆寫成 stub。同時補上 link 階段缺的其他 4.19 相容 stub。
     cat > "$KERNEL_DIR/KernelSU/kernel/feature/cpu_spoof.c" <<'CPUEOF'
 // SPDX-License-Identifier: GPL-2.0
 // 4.19 stub: CPU spoof requires 5.10+ clocksource.vdso_clock_mode / vdso/datapage.h
 #include "cpu_spoof.h"
+#include <linux/types.h>
+#include <linux/errno.h>
 int ksu_set_spoof_cpu(const struct ksu_set_spoof_cpu_cmd *cmd) { (void)cmd; return 0; }
+
+// === 4.19 compat stubs: symbols not exported or conditionally compiled on 4.19 ===
+// selinux_hide init/exit (whole feature stubbed)
+void ksu_selinux_hide_init(void) {}
+void ksu_selinux_hide_exit(void) {}
+
+// kernel internal symbols not exported in 4.19 (SukiSU resolves them via symbol_resolver on 5.10+)
+struct file; struct path;
+int seccomp_filter_release(struct file *f) { (void)f; return 0; }
+int path_mount(const char *dev_name, struct path *path, const char *type, unsigned long flags, void *data)
+{ (void)dev_name;(void)path;(void)type;(void)flags;(void)data; return -ENODEV; }
+int path_umount(struct path *path, int flags) { (void)path;(void)flags; return -EINVAL; }
+
+// sys_read hook (called from fs/read_write.c patch)
+long ksu_handle_sys_read(unsigned int fd, char __user *buf, size_t count)
+{ (void)fd;(void)buf;(void)count; return 0; }
+
+// init.rc hook enabled flag
+bool ksu_is_init_rc_hook_enabled(void) { return false; }
 CPUEOF
-    echo "[+] cpu_spoof.c overwritten as 4.19 stub"
+    echo "[+] cpu_spoof.c overwritten as 4.19 stub (+ compat stubs)"
     echo "[+] SukiSU Ultra setup finished."
 fi
 
