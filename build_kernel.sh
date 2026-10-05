@@ -178,6 +178,16 @@ PYEOF
     sed -i 's|#include <linux/minmax.h>|/* minmax.h not on 4.19 */|' "$KERNEL_DIR/KernelSU/kernel/sulog/event.c"
     # 4.19 相容：dispatch.c 用 tasklist_lock/task_pgrp/task_session/init_task，補表頭
     sed -i '1i #include <linux/sched/signal.h>\n#include <linux/init_task.h>' "$KERNEL_DIR/KernelSU/kernel/supercall/dispatch.c"
+    # 4.19 相容：supercall.c 也用 TWA_RESUME
+    python3 - "$KERNEL_DIR/KernelSU/kernel/supercall/supercall.c" <<'PYEOF'
+import sys,re
+p=sys.argv[1]
+s=open(p).read()
+s=re.sub(r'if \(task_work_add\((.*?), TWA_RESUME\)\) \{\n',
+         r'#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)\n    if (task_work_add(\1, TWA_RESUME)) {\n#else\n    if (task_work_add(\1, 0)) {\n#endif\n', s)
+open(p,"w").write(s)
+print("patched supercall.c")
+PYEOF
     echo "[+] SukiSU Ultra setup finished."
 fi
 
