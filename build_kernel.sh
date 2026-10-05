@@ -127,6 +127,18 @@ PYEOF
     sed -i 's|if (task_work_add(tsk, cb, TWA_RESUME)) {|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)\n    if (task_work_add(tsk, cb, TWA_RESUME)) {\n#else\n    if (task_work_add(tsk, cb, 0)) {\n#endif|' "$KERNEL_DIR/KernelSU/kernel/policy/allowlist.c"
     # 4.19 相容：struct seccomp 無 filter_count 成員
     sed -i 's|    atomic_set(&current->seccomp.filter_count, 0);|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n    atomic_set(\&current->seccomp.filter_count, 0);\n#endif|' "$KERNEL_DIR/KernelSU/kernel/policy/app_profile.c"
+    # 4.19 相容：selinux/rules.c 使用 5.x 的 selinux_state.policy/policy_mutex，4.19 API 不同，整包成 stub
+    python3 - "$KERNEL_DIR/KernelSU/kernel/selinux/rules.c" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+marker = '#include "xfrm.h"\n'
+if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s:
+    s = s.replace(marker, marker + "\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n", 1)
+    s = s.rstrip() + "\n#else\nstruct selinux_policy *backup_sepolicy;\nvoid apply_kernelsu_rules(void) {}\nint handle_sepolicy(void __user *user_data, u64 data_len) { (void)user_data; (void)data_len; return 0; }\n#endif\n"
+open(p,"w").write(s)
+print("patched rules.c for 4.19")
+PYEOF
     echo "[+] SukiSU Ultra setup finished."
 fi
 
