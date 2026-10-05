@@ -110,6 +110,18 @@ print("patched seccomp_cache.c for 4.19")
 PYEOF
     # 4.19 相容：uapi/linux/mount.h 為 5.10+ 表頭
     sed -i 's|#include <uapi/linux/mount.h>|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n#include <uapi/linux/mount.h>\n#endif|' "$KERNEL_DIR/KernelSU/kernel/infra/su_mount_ns.c"
+    # 4.19 相容：fsnotify_ops 在 4.19 用 handle_event 而非 handle_inode_event，整個 observer 在低版本包成 stub
+    python3 - "$KERNEL_DIR/KernelSU/kernel/manager/pkg_observer.c" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+marker = '#include "manager/throne_tracker.h"\n'
+if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)" not in s:
+    s = s.replace(marker, marker + "\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)\n", 1)
+    s = s.rstrip() + "\n#else\nint ksu_observer_init(void) { return 0; }\nvoid ksu_observer_exit(void) {}\n#endif\n"
+open(p,"w").write(s)
+print("patched pkg_observer.c for 4.19")
+PYEOF
     echo "[+] SukiSU Ultra setup finished."
 fi
 
