@@ -207,6 +207,23 @@ void ksu_selinux_hide_drop_backup_if_unused(void) {}
 open(p,"w").write(s)
 print("patched selinux_hide.c for 4.19")
 PYEOF
+    # 4.19 相容：cpu_spoof.c 用 5.x clocksource.vdso_clock_mode 與 vdso/datapage.h，整包成 stub
+    python3 - "$KERNEL_DIR/KernelSU/kernel/feature/cpu_spoof.c" <<'PYEOF'
+import sys
+p=sys.argv[1]
+s=open(p).read()
+marker='#include <vdso/datapage.h>\n'
+if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s:
+    s=s.replace(marker, marker+"\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n",1)
+    stub="""
+#else
+int ksu_set_spoof_cpu(const struct ksu_set_spoof_cpu_cmd *cmd) { (void)cmd; return 0; }
+#endif
+"""
+    s=s.rstrip()+stub
+open(p,"w").write(s)
+print("patched cpu_spoof.c for 4.19")
+PYEOF
     echo "[+] SukiSU Ultra setup finished."
 fi
 
