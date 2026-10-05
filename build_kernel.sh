@@ -94,6 +94,20 @@ s = s.replace(
 open(p,"w").write(s)
 print("patched file_wrapper.c for 4.19")
 PYEOF
+    # 4.19 相容：seccomp_cache.c 使用 5.10+ 才有的 SECCOMP_ARCH_NATIVE_NR
+    python3 - "$KERNEL_DIR/KernelSU/kernel/infra/seccomp_cache.c" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+guard = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n"
+if not s.startswith(guard):
+    # 在最後一個 #include 之後插入守衛結尾
+    marker = '#include "infra/seccomp_cache.h"\n'
+    s = s.replace(marker, marker + "\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n", 1)
+    s = s.rstrip() + "\n#else\nvoid ksu_seccomp_clear_cache(struct seccomp_filter *filter, int nr) { (void)filter; (void)nr; }\nvoid ksu_seccomp_allow_cache(struct seccomp_filter *filter, int nr) { (void)filter; (void)nr; }\n#endif\n"
+open(p,"w").write(s)
+print("patched seccomp_cache.c for 4.19")
+PYEOF
     echo "[+] SukiSU Ultra setup finished."
 fi
 
