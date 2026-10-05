@@ -125,6 +125,8 @@ PYEOF
     # 4.19 相容：TWA_RESUME 為 5.14+，task_work_add 第三參數用 0；補 put_task_struct 表頭
     sed -i 's|#include <linux/hashtable.h>|#include <linux/hashtable.h>\n#include <linux/sched/task.h>|' "$KERNEL_DIR/KernelSU/kernel/policy/allowlist.c"
     sed -i 's|if (task_work_add(tsk, cb, TWA_RESUME)) {|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)\n    if (task_work_add(tsk, cb, TWA_RESUME)) {\n#else\n    if (task_work_add(tsk, cb, 0)) {\n#endif|' "$KERNEL_DIR/KernelSU/kernel/policy/allowlist.c"
+    # 4.19 相容：struct seccomp 無 filter_count 成員
+    sed -i 's|    atomic_set(&current->seccomp.filter_count, 0);|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n    atomic_set(\&current->seccomp.filter_count, 0);\n#endif|' "$KERNEL_DIR/KernelSU/kernel/policy/app_profile.c"
     echo "[+] SukiSU Ultra setup finished."
 fi
 
