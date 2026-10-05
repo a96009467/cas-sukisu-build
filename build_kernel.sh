@@ -65,6 +65,8 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "==========================================="
     echo "[*] Downloading and running SukiSU Ultra remote setup script..."
     curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash
+    # 4.19 無 MODULE_IMPORT_NS 巨集，註解掉該行
+    sed -i 's|^MODULE_IMPORT_NS(VFS_internal.*|// &|' "$KERNEL_DIR/KernelSU/kernel/core/init.c"
     echo "[+] SukiSU Ultra setup finished."
 fi
 
