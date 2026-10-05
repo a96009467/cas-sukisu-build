@@ -113,6 +113,7 @@ build_target() {
         HOSTCC="ccache clang"
         CROSS_COMPILE="${CROSS_COMPILE}"
         CROSS_COMPILE_ARM32="${CROSS_COMPILE_ARM32}"
+        KCFLAGS="-Wno-error"
     )
 
     echo "[*] Cleaning ${OUT_DIR}..."
