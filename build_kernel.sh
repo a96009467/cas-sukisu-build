@@ -139,6 +139,41 @@ if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s
 open(p,"w").write(s)
 print("patched rules.c for 4.19")
 PYEOF
+    # 4.19 相容：sepolicy.c 使用 5.x SELinux policydb 內部結構，整包成 stub
+    python3 - "$KERNEL_DIR/KernelSU/kernel/selinux/sepolicy.c" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+marker = '#include "ss/symtab.h"\n'
+if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s:
+    s = s.replace(marker, marker + "\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n", 1)
+    stub = """
+#else
+struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol) { (void)old_pol; return NULL; }
+void ksu_destroy_sepolicy(struct selinux_policy *orig) { (void)orig; }
+bool ksu_type(struct policydb *db, const char *name, const char *attr) { (void)db;(void)name;(void)attr; return false; }
+bool ksu_attribute(struct policydb *db, const char *name) { (void)db;(void)name; return false; }
+bool ksu_permissive(struct policydb *db, const char *type) { (void)db;(void)type; return false; }
+bool ksu_enforce(struct policydb *db, const char *type) { (void)db;(void)type; return false; }
+bool ksu_typeattribute(struct policydb *db, const char *type, const char *attr) { (void)db;(void)type;(void)attr; return false; }
+bool ksu_exists(struct policydb *db, const char *type) { (void)db;(void)type; return false; }
+bool ksu_allow(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *perm) { (void)db;(void)src;(void)tgt;(void)cls;(void)perm; return false; }
+bool ksu_deny(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *perm) { (void)db;(void)src;(void)tgt;(void)cls;(void)perm; return false; }
+bool ksu_auditallow(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *perm) { (void)db;(void)src;(void)tgt;(void)cls;(void)perm; return false; }
+bool ksu_dontaudit(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *perm) { (void)db;(void)src;(void)tgt;(void)cls;(void)perm; return false; }
+bool ksu_allowxperm(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *range) { (void)db;(void)src;(void)tgt;(void)cls;(void)range; return false; }
+bool ksu_auditallowxperm(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *range) { (void)db;(void)src;(void)tgt;(void)cls;(void)range; return false; }
+bool ksu_dontauditxperm(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *range) { (void)db;(void)src;(void)tgt;(void)cls;(void)range; return false; }
+bool ksu_type_transition(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *def, const char *obj) { (void)db;(void)src;(void)tgt;(void)cls;(void)def;(void)obj; return false; }
+bool ksu_type_change(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *def) { (void)db;(void)src;(void)tgt;(void)cls;(void)def; return false; }
+bool ksu_type_member(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *def) { (void)db;(void)src;(void)tgt;(void)cls;(void)def; return false; }
+bool ksu_genfscon(struct policydb *db, const char *fs_name, const char *path, const char *ctx) { (void)db;(void)fs_name;(void)path;(void)ctx; return false; }
+#endif
+"""
+    s = s.rstrip() + stub
+open(p,"w").write(s)
+print("patched sepolicy.c for 4.19")
+PYEOF
     echo "[+] SukiSU Ultra setup finished."
 fi
 
