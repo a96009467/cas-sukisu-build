@@ -108,6 +108,8 @@ if not s.startswith(guard):
 open(p,"w").write(s)
 print("patched seccomp_cache.c for 4.19")
 PYEOF
+    # 4.19 相容：uapi/linux/mount.h 為 5.10+ 表頭
+    sed -i 's|#include <uapi/linux/mount.h>|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n#include <uapi/linux/mount.h>\n#endif|' "$KERNEL_DIR/KernelSU/kernel/infra/su_mount_ns.c"
     echo "[+] SukiSU Ultra setup finished."
 fi
 
