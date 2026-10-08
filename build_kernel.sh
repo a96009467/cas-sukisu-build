@@ -207,21 +207,16 @@ build_target() {
 
     # Configuration tweaks
     if [ "$ENABLE_KSU" -eq 1 ]; then
-        echo "[*] Injecting BakaSU configs (Manual Hook mode for 4.19)..."
+        echo "[*] Injecting BakaSU configs (SUSFS inline-hook mode, matches SO-TS kernel)..."
         scripts/config --file "${OUT_DIR}/.config" \
             -e KSU \
-            -e KSU_MANUAL_HOOK \
+            -e KSU_SUSFS \
             -d KSU_TRACEPOINT_HOOK \
-            -d KSU_SUSFS \
+            -d KSU_MANUAL_HOOK \
             -e KSU_MULTI_MANAGER_SUPPORT \
             -e KALLSYMS \
             -e KALLSYMS_ALL
         scripts/config --file "${OUT_DIR}/.config" -d WERROR
-        # manual hook auto hooks (defaults): setuid/initrc/input keep enabled
-        scripts/config --file "${OUT_DIR}/.config" \
-            -e KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
-            -e KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
-            -e KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
         echo "[+] KSU configs injected."
     fi
 
