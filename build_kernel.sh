@@ -57,199 +57,17 @@ clang --version || { echo "[!] Clang not found"; exit 1; }
 mkdir -p "$CCACHE_DIR"
 
 # ==========================================
-# SukiSU Ultra Setup  (changed from ReSukiSU)
+# BakaSU (ReSukiSU) Setup
 # ==========================================
 if [ "$ENABLE_KSU" -eq 1 ]; then
     echo "==========================================="
-    echo " [*] Initializing SukiSU Ultra Setup"
+    echo " [*] Initializing BakaSU (ReSukiSU) Setup"
     echo "==========================================="
-    echo "[*] Downloading and running SukiSU Ultra remote setup script..."
-    curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash
-    # 4.19 相容修正：MODULE_IMPORT_NS 不存在
-    sed -i 's|^MODULE_IMPORT_NS(VFS_internal.*|// &|' "$KERNEL_DIR/KernelSU/kernel/core/init.c"
-    # 4.19 相容修正：file_operations 無 iopoll / remap_file_range 成員
-    python3 - "$KERNEL_DIR/KernelSU/kernel/infra/file_wrapper.c" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-# iopoll：把 #else 改為 #elif >=5.10，4.19 兩分支都不編
-s = s.replace(
-"#else\nstatic int ksu_wrapper_iopoll(struct kiocb *kiocb, bool spin)",
-"#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\nstatic int ksu_wrapper_iopoll(struct kiocb *kiocb, bool spin)")
-# iopoll ops 賦值守衛
-s = s.replace(
-"    p->ops.iopoll = fp->f_op->iopoll ? ksu_wrapper_iopoll : NULL;",
-"#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n    p->ops.iopoll = fp->f_op->iopoll ? ksu_wrapper_iopoll : NULL;\n#endif")
-# remap_file_range：包裝函式守衛
-s = s.replace(
-"static loff_t ksu_wrapper_remap_file_range",
-"#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)\nstatic loff_t ksu_wrapper_remap_file_range")
-s = s.replace(
-"    return orig->f_op->remap_file_range(orig, pos_in, file_out, pos_out, len, remap_flags);\n    }\n}",
-"    return orig->f_op->remap_file_range(orig, pos_in, file_out, pos_out, len, remap_flags);\n    }\n}\n#endif")
-# remap ops 賦值守衛
-s = s.replace(
-"    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;",
-"#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)\n    p->ops.remap_file_range = fp->f_op->remap_file_range ? ksu_wrapper_remap_file_range : NULL;\n#endif")
-open(p,"w").write(s)
-print("patched file_wrapper.c for 4.19")
-PYEOF
-    # 4.19 相容：seccomp_cache.c 使用 5.10+ 才有的 SECCOMP_ARCH_NATIVE_NR
-    python3 - "$KERNEL_DIR/KernelSU/kernel/infra/seccomp_cache.c" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-guard = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n"
-if not s.startswith(guard):
-    # 在最後一個 #include 之後插入守衛結尾
-    marker = '#include "infra/seccomp_cache.h"\n'
-    s = s.replace(marker, marker + "\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n", 1)
-    s = s.rstrip() + "\n#else\nvoid ksu_seccomp_clear_cache(struct seccomp_filter *filter, int nr) { (void)filter; (void)nr; }\nvoid ksu_seccomp_allow_cache(struct seccomp_filter *filter, int nr) { (void)filter; (void)nr; }\n#endif\n"
-open(p,"w").write(s)
-print("patched seccomp_cache.c for 4.19")
-PYEOF
-    # 4.19 相容：uapi/linux/mount.h 為 5.10+ 表頭
-    sed -i 's|#include <uapi/linux/mount.h>|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n#include <uapi/linux/mount.h>\n#endif|' "$KERNEL_DIR/KernelSU/kernel/infra/su_mount_ns.c"
-    # 4.19 相容：fsnotify_ops 在 4.19 用 handle_event 而非 handle_inode_event，整個 observer 在低版本包成 stub
-    python3 - "$KERNEL_DIR/KernelSU/kernel/manager/pkg_observer.c" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-marker = '#include "manager/throne_tracker.h"\n'
-if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)" not in s:
-    s = s.replace(marker, marker + "\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)\n", 1)
-    s = s.rstrip() + "\n#else\nint ksu_observer_init(void) { return 0; }\nvoid ksu_observer_exit(void) {}\n#endif\n"
-open(p,"w").write(s)
-print("patched pkg_observer.c for 4.19")
-PYEOF
-    # 4.19 相容：TWA_RESUME 為 5.14+，task_work_add 第三參數用 0；補 put_task_struct 表頭
-    sed -i 's|#include <linux/hashtable.h>|#include <linux/hashtable.h>\n#include <linux/sched/task.h>|' "$KERNEL_DIR/KernelSU/kernel/policy/allowlist.c"
-    sed -i 's|if (task_work_add(tsk, cb, TWA_RESUME)) {|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)\n    if (task_work_add(tsk, cb, TWA_RESUME)) {\n#else\n    if (task_work_add(tsk, cb, 0)) {\n#endif|' "$KERNEL_DIR/KernelSU/kernel/policy/allowlist.c"
-    # 4.19 相容：struct seccomp 無 filter_count 成員
-    sed -i 's|    atomic_set(&current->seccomp.filter_count, 0);|#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n    atomic_set(\&current->seccomp.filter_count, 0);\n#endif|' "$KERNEL_DIR/KernelSU/kernel/policy/app_profile.c"
-    # 4.19 相容：selinux/rules.c 使用 5.x 的 selinux_state.policy/policy_mutex，4.19 API 不同，整包成 stub
-    python3 - "$KERNEL_DIR/KernelSU/kernel/selinux/rules.c" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-marker = '#include "xfrm.h"\n'
-if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s:
-    s = s.replace(marker, marker + "\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n", 1)
-    s = s.rstrip() + "\n#else\nstruct selinux_policy *backup_sepolicy;\nvoid apply_kernelsu_rules(void) {}\nint handle_sepolicy(void __user *user_data, u64 data_len) { (void)user_data; (void)data_len; return 0; }\n#endif\n"
-open(p,"w").write(s)
-print("patched rules.c for 4.19")
-PYEOF
-    # 4.19 相容：sepolicy.c 使用 5.x SELinux policydb 內部結構，整包成 stub
-    python3 - "$KERNEL_DIR/KernelSU/kernel/selinux/sepolicy.c" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-marker = '#include "ss/symtab.h"\n'
-if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s:
-    s = s.replace(marker, marker + "\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n", 1)
-    stub = """
-#else
-struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol) { (void)old_pol; return NULL; }
-void ksu_destroy_sepolicy(struct selinux_policy *orig) { (void)orig; }
-bool ksu_type(struct policydb *db, const char *name, const char *attr) { (void)db;(void)name;(void)attr; return false; }
-bool ksu_attribute(struct policydb *db, const char *name) { (void)db;(void)name; return false; }
-bool ksu_permissive(struct policydb *db, const char *type) { (void)db;(void)type; return false; }
-bool ksu_enforce(struct policydb *db, const char *type) { (void)db;(void)type; return false; }
-bool ksu_typeattribute(struct policydb *db, const char *type, const char *attr) { (void)db;(void)type;(void)attr; return false; }
-bool ksu_exists(struct policydb *db, const char *type) { (void)db;(void)type; return false; }
-bool ksu_allow(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *perm) { (void)db;(void)src;(void)tgt;(void)cls;(void)perm; return false; }
-bool ksu_deny(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *perm) { (void)db;(void)src;(void)tgt;(void)cls;(void)perm; return false; }
-bool ksu_auditallow(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *perm) { (void)db;(void)src;(void)tgt;(void)cls;(void)perm; return false; }
-bool ksu_dontaudit(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *perm) { (void)db;(void)src;(void)tgt;(void)cls;(void)perm; return false; }
-bool ksu_allowxperm(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *range) { (void)db;(void)src;(void)tgt;(void)cls;(void)range; return false; }
-bool ksu_auditallowxperm(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *range) { (void)db;(void)src;(void)tgt;(void)cls;(void)range; return false; }
-bool ksu_dontauditxperm(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *range) { (void)db;(void)src;(void)tgt;(void)cls;(void)range; return false; }
-bool ksu_type_transition(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *def, const char *obj) { (void)db;(void)src;(void)tgt;(void)cls;(void)def;(void)obj; return false; }
-bool ksu_type_change(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *def) { (void)db;(void)src;(void)tgt;(void)cls;(void)def; return false; }
-bool ksu_type_member(struct policydb *db, const char *src, const char *tgt, const char *cls, const char *def) { (void)db;(void)src;(void)tgt;(void)cls;(void)def; return false; }
-bool ksu_genfscon(struct policydb *db, const char *fs_name, const char *path, const char *ctx) { (void)db;(void)fs_name;(void)path;(void)ctx; return false; }
-#endif
-"""
-    s = s.rstrip() + stub
-open(p,"w").write(s)
-print("patched sepolicy.c for 4.19")
-PYEOF
-    # 4.19 相容：linux/minmax.h 為 5.10+ 表頭
-    sed -i 's|#include <linux/minmax.h>|/* minmax.h not on 4.19 */|' "$KERNEL_DIR/KernelSU/kernel/sulog/event.c"
-    # 4.19 相容：dispatch.c 用 tasklist_lock/task_pgrp/task_session/init_task，補表頭
-    sed -i '1i #include <linux/sched/signal.h>\n#include <linux/init_task.h>' "$KERNEL_DIR/KernelSU/kernel/supercall/dispatch.c"
-    # 4.19 相容：supercall.c 也用 TWA_RESUME
-    python3 - "$KERNEL_DIR/KernelSU/kernel/supercall/supercall.c" <<'PYEOF'
-import sys,re
-p=sys.argv[1]
-s=open(p).read()
-s=re.sub(r'if \(task_work_add\((.*?), TWA_RESUME\)\) \{\n',
-         r'#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)\n    if (task_work_add(\1, TWA_RESUME)) {\n#else\n    if (task_work_add(\1, 0)) {\n#endif\n', s)
-open(p,"w").write(s)
-print("patched supercall.c")
-PYEOF
-    # 4.19 相容：selinux_hide.c 使用 5.x selinux_state 內部成員，整包成 stub
-    python3 - "$KERNEL_DIR/KernelSU/kernel/feature/selinux_hide.c" <<'PYEOF'
-import sys
-p=sys.argv[1]
-s=open(p).read()
-marker='#include <ss/services.h>\n'
-if marker in s and "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)" not in s:
-    s=s.replace(marker, marker+"\n#include <linux/version.h>\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n",1)
-    stub="""
-#else
-void ksu_selinux_hide_handle_second_stage(void) {}
-void ksu_selinux_hide_handle_post_fs_data(void) {}
-void ksu_selinux_hide_drop_backup_if_unused(void) {}
-#endif
-"""
-    s=s.rstrip()+stub
-open(p,"w").write(s)
-print("patched selinux_hide.c for 4.19")
-PYEOF
-    # 4.19 相容：cpu_spoof.c 用 5.x clocksource.vdso_clock_mode / vdso/datapage.h / ARM64_WORKAROUND_1418040，
-    # 這些符號 4.19 全沒有，直接整支覆寫成 stub。同時補上 link 階段缺的其他 4.19 相容 stub。
-    cat > "$KERNEL_DIR/KernelSU/kernel/feature/cpu_spoof.c" <<'CPUEOF'
-// SPDX-License-Identifier: GPL-2.0
-// 4.19 stub: CPU spoof requires 5.10+ clocksource.vdso_clock_mode / vdso/datapage.h
-#include "cpu_spoof.h"
-#include <linux/types.h>
-#include <linux/errno.h>
-int ksu_set_spoof_cpu(const struct ksu_set_spoof_cpu_cmd *cmd) { (void)cmd; return 0; }
+    echo "[*] Downloading and running BakaSU remote setup script..."
+    curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
 
-// === 4.19 compat stubs: symbols not exported or conditionally compiled on 4.19 ===
-// selinux_hide init/exit (whole feature stubbed)
-void ksu_selinux_hide_init(void) {}
-void ksu_selinux_hide_exit(void) {}
-
-// kernel internal symbols not exported in 4.19 (SukiSU resolves them via symbol_resolver on 5.10+)
-struct file; struct path;
-int seccomp_filter_release(struct file *f) { (void)f; return 0; }
-int path_mount(const char *dev_name, struct path *path, const char *type, unsigned long flags, void *data)
-{ (void)dev_name;(void)path;(void)type;(void)flags;(void)data; return -ENODEV; }
-int path_umount(struct path *path, int flags) { (void)path;(void)flags; return -EINVAL; }
-
-// sys_read hook (called from fs/read_write.c patch)
-long ksu_handle_sys_read(unsigned int fd, char __user *buf, size_t count)
-{ (void)fd;(void)buf;(void)count; return 0; }
-
-// init.rc hook enabled flag
-bool ksu_is_init_rc_hook_enabled(void) { return false; }
-CPUEOF
-    echo "[+] cpu_spoof.c overwritten as 4.19 stub (+ compat stubs)"
-    echo "[+] SukiSU Ultra setup finished."
+    echo "[+] BakaSU setup finished."
 fi
-
-# ==========================================
-# Baseband-guard Setup
-# ==========================================
-echo "==========================================="
-echo " [*] Initializing Baseband-guard Setup"
-echo "==========================================="
-wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
-sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
-echo "[+] Baseband-guard setup finished."
-echo "==========================================="
 
 # ==========================================
 # AnyKernel3 Setup
@@ -347,19 +165,23 @@ build_target() {
     make "${MAKE_OPTS[@]}" "${DEFCONFIG}"
 
     # Configuration tweaks
-    echo "[*] Injecting Baseband-guard configuration..."
-    scripts/config --file "${OUT_DIR}/.config" -e BBG
-
     if [ "$ENABLE_KSU" -eq 1 ]; then
-        echo "[*] Injecting SukiSU Ultra configs (KSU + SUSFS + KALLSYMS + KPM)..."
+        echo "[*] Injecting BakaSU configs (Manual Hook mode for 4.19)..."
         scripts/config --file "${OUT_DIR}/.config" \
             -e KSU \
-            -e KPROBES \
-            -e THREAD_INFO_IN_TASK \
-            -e KSU_SUSFS \
+            -e KSU_MANUAL_HOOK \
+            -d KSU_TRACEPOINT_HOOK \
+            -d KSU_SUSFS \
+            -e KSU_MULTI_MANAGER_SUPPORT \
             -e KALLSYMS \
             -e KALLSYMS_ALL
         scripts/config --file "${OUT_DIR}/.config" -d WERROR
+        # manual hook auto hooks (defaults): setuid/initrc/input keep enabled
+        scripts/config --file "${OUT_DIR}/.config" \
+            -e KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
+            -e KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+            -e KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
+        echo "[+] KSU configs injected."
     fi
 
     if [ "$OS_TYPE" == "miui" ]; then
@@ -409,6 +231,9 @@ build_target() {
     echo "[*] Updating config (make olddefconfig)..."
     make "${MAKE_OPTS[@]}" olddefconfig
 
+    echo "[*] Verifying KSU configs survived olddefconfig..."
+    grep -E "CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK|CONFIG_KSU_SUSFS|CONFIG_KSU_TRACEPOINT" "${OUT_DIR}/.config" || true
+
     echo "[*] Building kernel..."
     make "${MAKE_OPTS[@]}"
 
@@ -433,7 +258,7 @@ build_target() {
 
         local KSU_ZIP_STR="NoKernelSU"
         if [ "$ENABLE_KSU" -eq 1 ]; then
-            KSU_ZIP_STR="SukiSU-Ultra-SuSFS"
+            KSU_ZIP_STR="BakaSU-ManualHook"
         fi
         local GIT_COMMIT_ID=$(git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
         local OS_UPPER=$(echo "$OS_TYPE" | tr '[:lower:]' '[:upper:]')
