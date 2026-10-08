@@ -67,6 +67,47 @@ if [ "$ENABLE_KSU" -eq 1 ]; then
     curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
 
     echo "[+] BakaSU setup finished."
+
+    echo "[*] Patching fs/stat.c for BakaSU manual hooks (newfstat_ret / fstat64_ret)..."
+    python3 - <<'PYEOF'
+p = 'fs/stat.c'
+s = open(p, encoding='utf-8').read()
+
+# 1) extern declarations (after ksu_handle_stat extern)
+old_ext = 'extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);'
+new_ext = old_ext + '''
+extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
+extern void ksu_handle_fstat64_ret(unsigned long *fd, void __user **statbuf_ptr); /* ksu_handle_fstat64_ret: 32-bit compat only, not compiled on arm64 */
+'''
+assert old_ext in s, 'extern stat anchor not found'
+s = s.replace(old_ext, new_ext, 1)
+
+# 2) insert ksu_handle_newfstat_ret call at end of SYSCALL_DEFINE2(newfstat,...)
+old_nf = '''SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+{
+	struct kstat stat;
+	int error = vfs_fstat(fd, &stat);
+
+	if (!error)
+		error = cp_new_stat(&stat, statbuf);
+
+	return error;
+}'''
+assert old_nf in s, 'newfstat block not found'
+new_nf = old_nf.replace('''	if (!error)
+		error = cp_new_stat(&stat, statbuf);
+
+	return error;''', '''	if (!error)
+		error = cp_new_stat(&stat, statbuf);
+
+	ksu_handle_newfstat_ret(&fd, &statbuf);
+
+	return error;''', 1)
+s = s.replace(old_nf, new_nf, 1)
+
+open(p, 'w', encoding='utf-8').write(s)
+print('[+] fs/stat.c patched: ksu_handle_newfstat_ret inserted, ksu_handle_fstat64_ret present')
+PYEOF
 fi
 
 # ==========================================
